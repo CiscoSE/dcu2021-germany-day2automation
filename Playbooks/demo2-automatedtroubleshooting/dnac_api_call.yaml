@@ -1,0 +1,68 @@
+#Copyright (c) 2021 Cisco and/or its affiliates.
+#
+#This software is licensed to you under the terms of the Cisco Sample
+#Code License, Version 1.1 (the "License"). You may obtain a copy of the
+#License at
+#
+#               https://developer.cisco.com/docs/licenses
+#
+#All use of the material herein must be in accordance with the terms of
+#the License. All rights not expressly granted by the License are
+#reserved. Unless required by applicable law or agreed to separately in
+#writing, software distributed under the License is distributed on an "AS
+#IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+#or implied.
+
+
+
+### This Playbook queries DNAC for client based information based on 802.1x authentication informations
+- name: Play 1 Query DNAC for Client Information
+  hosts: all
+  gather_facts: no
+  vars:
+        login: "{{ lookup('env', 'ANSIBLE_NET_USERNAME') }}:{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+
+
+
+  tasks:
+
+
+#### DNAC login via URI
+    - name: DNAC Login
+      uri:
+          url: https://{{ inventory_hostname }}/dna/system/api/v1/auth/token
+          headers:
+            Authorization: Basic {{ login | b64encode }}
+          method: POST
+          status_code: 200
+          return_content: yes
+          validate_certs: no
+      register: qResult  
+      delegate_to: localhost
+
+
+    - set_fact:
+         token: "{{ qResult.json.Token }}"
+
+
+#### Get Client Information 
+    - name: DNAC Get get_client_enrichment_details
+      uri:
+          url: https://{{ inventory_hostname }}/dna/intent/api/v1/client-enrichment-details
+          headers:
+            x-auth-token: "{{ token }}"
+            entity_type: "network_user_id"
+            entity_value: "{{ userId }}"
+          method: GET
+          status_code: 200
+          return_content: yes
+          validate_certs: no
+      register: qResult  
+      delegate_to: localhost
+
+#### Set TicketText
+    - name: Set Ticket Stat
+      set_stats:
+        data:
+          ticketText: "DNAC User details<br><br>Requestor Network UserId: {{ qResult.json[0].userDetails.userId }}   <br>Client Ip: {{  qResult.json[0].userDetails.hostIpV4 }}   <br>Client: {{ qResult.json[0].userDetails.subType }} - {{ qResult.json[0].userDetails.hostType }} - {{ qResult.json[0].userDetails.hostOs }}   <br>Location: {{ qResult.json[0].userDetails.location }}   <br>Connected to Switch: {{ qResult.json[0].userDetails.clientConnection }} - Port {{ qResult.json[0].userDetails.port }} <br>"
+        per_host: no

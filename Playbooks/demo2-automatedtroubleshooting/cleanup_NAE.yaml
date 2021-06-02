@@ -1,0 +1,94 @@
+#Copyright (c) 2021 Cisco and/or its affiliates.
+#
+#This software is licensed to you under the terms of the Cisco Sample
+#Code License, Version 1.1 (the "License"). You may obtain a copy of the
+#License at
+#
+#               https://developer.cisco.com/docs/licenses
+#
+#All use of the material herein must be in accordance with the terms of
+#the License. All rights not expressly granted by the License are
+#reserved. Unless required by applicable law or agreed to separately in
+#writing, software distributed under the License is distributed on an "AS
+#IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+#or implied.
+
+
+### This playbook cleans up after a Successful Demo
+- name: Play 1 Cleanup Playbook
+  hosts: all
+  gather_facts: no
+
+
+  tasks:
+
+#### Pause :)
+    - name: Pause before Cleanup 
+      pause:
+        minutes: "{{ pause }}"
+
+#### First Login Step Generate Token
+    - name: WHOAMI
+      uri:
+          url: https://{{ nd }}/nae/api/v1/whoami
+          method: GET
+          status_code: 200
+          return_content: yes
+          validate_certs: no
+      register: output
+      delegate_to: localhost
+
+#### Login Token Fact (not necessary but in there for better understanding)
+    - set_fact:
+        token: "{{ output.x_nae_login_otp }}"
+        cookie: "{{ output.set_cookie }}"
+
+#### Second Login Step - Use Token/Cookie with username/password to recieve xsrf token and second cookie
+    - name: Login Step 2
+      uri:
+          url: https://{{ nd }}/nae/api/v1/login 
+          headers:
+            {
+             Cookie: "{{ cookie }}", 
+             X-NAE-LOGIN-OTP: "{{ token }}",
+
+             domain : "Local",
+             Content-Type: "application/json"
+            }
+          method: POST
+          body_format: json
+          body:
+            {
+             username: "{{ lookup('env', 'ANSIBLE_NET_USERNAME') }}",
+             password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}",
+            }
+          status_code: 200
+          return_content: yes
+          validate_certs: no
+      register: result
+      delegate_to: localhost
+
+#### Fact for second cookie and xsrf token
+
+    - set_fact:
+          cnaelogin: "{{ result.x_nae_csrf_token }}"
+          cnaecookie: "{{ result.set_cookie }}"
+
+
+#### Delete Delta Analysis
+    - name: Delete NAE Delta Analysis
+      uri:
+          url: https://{{ nd }}/nae/api/v1/job-services/{{ nAnalysis }}
+          headers:
+            {
+             X-NAE-CSRF-TOKEN: "{{ cnaelogin }}",
+             Cookie: "{{ cnaecookie }}",
+             Content-Type: "application/json;charset=UTF-8",
+             Accept: "application/json",
+            }
+          method: DELETE
+          status_code: 200
+          return_content: yes
+          validate_certs: no
+      register: qResult
+      delegate_to: localhost
